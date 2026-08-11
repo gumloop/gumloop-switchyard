@@ -361,7 +361,8 @@ class _NativeModule(Protocol):
 def _ensure_switchyard_version_env() -> None:
     if os.environ.get("SWITCHYARD_VERSION", "").strip():
         return
-    for distribution in ("switchyard", "nemo-switchyard"):
+    # Gumloop fork: the renamed dist participates in the existing fallback chain.
+    for distribution in ("switchyard", "gumloop-nemo-switchyard", "nemo-switchyard"):
         try:
             version = importlib.metadata.version(distribution)
         except importlib.metadata.PackageNotFoundError:

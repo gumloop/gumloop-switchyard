@@ -46,11 +46,14 @@ def _is_opted_out() -> bool:
 @lru_cache(maxsize=1)
 def _get_version() -> str:
     """Read the installed ``nemo-switchyard`` package version once."""
-    try:
-        return importlib.metadata.version("nemo-switchyard")
-    except Exception:
-        log.debug("telemetry: could not read switchyard package version", exc_info=True)
-        return "unknown"
+    # Gumloop fork: the renamed dist is tried first; upstream's name keeps source parity.
+    for dist in ("gumloop-nemo-switchyard", "nemo-switchyard"):
+        try:
+            return importlib.metadata.version(dist)
+        except Exception:
+            continue
+    log.debug("telemetry: could not read switchyard package version", exc_info=True)
+    return "unknown"
 
 
 def get_telemetry_headers() -> dict[str, str]:

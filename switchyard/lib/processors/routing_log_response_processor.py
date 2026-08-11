@@ -10,7 +10,10 @@ import json
 import logging
 import threading
 from collections.abc import Mapping
-from datetime import UTC, datetime
+# Gumloop fork: py3.10 has no datetime.UTC alias.
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 

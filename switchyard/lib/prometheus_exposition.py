@@ -32,10 +32,13 @@ from __future__ import annotations
 from importlib.metadata import version as _pkg_version
 from typing import Any
 
-try:
-    _SWITCHYARD_VERSION = _pkg_version("nemo-switchyard")
-except Exception:
-    _SWITCHYARD_VERSION = "unknown"
+# Gumloop fork: the renamed dist is tried first; upstream's name keeps source parity.
+for _dist in ("gumloop-nemo-switchyard", "nemo-switchyard"):
+    try:
+        _SWITCHYARD_VERSION = _pkg_version(_dist)
+        break
+    except Exception:
+        _SWITCHYARD_VERSION = "unknown"
 
 
 def render_prometheus(snapshot: dict[str, Any]) -> str:

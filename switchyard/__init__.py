@@ -192,7 +192,11 @@ __all__ = [
 ]
 
 try:
-    __version__ = _metadata.version("nemo-switchyard")
+    # Gumloop fork: the renamed dist is tried first; upstream's name keeps source parity.
+    __version__ = _metadata.version("gumloop-nemo-switchyard")
 except _metadata.PackageNotFoundError:
-    # A source checkout may not have installed distribution metadata.
-    __version__ = "0.0.0+unknown"
+    try:
+        __version__ = _metadata.version("nemo-switchyard")
+    except _metadata.PackageNotFoundError:
+        # A source checkout may not have installed distribution metadata.
+        __version__ = "0.0.0+unknown"

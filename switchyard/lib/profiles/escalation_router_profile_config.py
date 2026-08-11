@@ -5,7 +5,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Any
+
+try:
+    from typing import Self
+except ImportError:  # Gumloop fork: py3.10 — Self landed in typing in 3.11.
+    from typing_extensions import Self
 
 from switchyard.lib.affinity_pin_store import AffinityPinStore
 from switchyard.lib.backends.deterministic_routing_llm_backend import (

@@ -8,7 +8,10 @@ from __future__ import annotations
 import json
 import logging
 import uuid as uuid_lib
-from datetime import UTC, datetime
+# Gumloop fork: py3.10 has no datetime.UTC alias.
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from pathlib import Path
 from typing import Any
 

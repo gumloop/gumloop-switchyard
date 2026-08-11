@@ -5,7 +5,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Any
+
+try:
+    from typing import Self
+except ImportError:  # Gumloop fork: py3.10 — Self landed in typing in 3.11.
+    from typing_extensions import Self
 
 from switchyard.lib.processors.llm_classifier.presets import (
     PROFILE_FACTORIES,

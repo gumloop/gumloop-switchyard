@@ -3,12 +3,14 @@ requires = ["maturin>=1.9,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "nemo-switchyard"
-version = "0.2.0"
-description = "Typed, composable LLM routing with request/response translation and multi-backend orchestration"
+# Gumloop fork: dist renamed (mirrors gumloop-celery); import names are unchanged.
+name = "gumloop-nemo-switchyard"
+version = "0.2.0+gumloop.0.1.0"
+description = "Typed, composable LLM routing with request/response translation and multi-backend orchestration (Gumloop fork of nemo-switchyard)"
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.12"
+# Gumloop fork: cp310-abi3 wheel (see crates/switchyard-py/Cargo.toml abi3-py310).
+requires-python = ">=3.10"
 authors = [{ name = "NVIDIA Corporation" }]
 maintainers = [{ name = "NVIDIA Corporation" }]
 keywords = ["llm", "switchyard", "routing", "openai", "nemo"]
@@ -17,6 +19,8 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -30,7 +34,20 @@ classifiers = [
 #   pip install nemo-switchyard[server]         # Add FastAPI/Uvicorn for e2e
 #   pip install nemo-switchyard[cli]            # Add prompt-toolkit for CLI
 #   pip install nemo-switchyard[all]            # Everything
+# Gumloop fork: the core install carries only what the libsy bindings surface
+# (``switchyard_rust.libsy``) needs, so embedding hosts do not inherit provider-SDK
+# floors they may pin differently. The upstream core dependencies moved to the
+# ``lib`` extra, which the full ``switchyard`` package (proxy/profiles/clients)
+# requires; ``server``/``cli``/``all`` pull it in transitively.
 dependencies = [
+    # py3.10 needs the typing_extensions backport of typing.Self.
+    "typing-extensions>=4.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+# Gumloop fork: the upstream core dependencies, needed by the full ``switchyard``
+# package (proxy, profiles, provider clients) but not by ``switchyard_rust.libsy``.
+lib = [
     # openai: request/response schema types, plus the async client in lib/llm_client.py.
     # Keep this floor low enough for downstream consumers to co-install us; NeMo Gym pins
     # openai<=2.7.2. The suite passes unchanged from 2.7.0 through 2.48.0.
@@ -40,10 +57,10 @@ dependencies = [
     "pydantic>=2.13.3,<3.0",
 ]
 
-[project.optional-dependencies]
 # Server dependencies — FastAPI + Uvicorn for e2e users who want to run
 # switchyard as a proxy. Not needed for library-only usage.
 server = [
+    "gumloop-nemo-switchyard[lib]",
     "fastapi>=0.136.1,<1.0",
     "uvicorn[standard]>=0.46.0,<1.0",
     "sse-starlette>=3.4.1,<4.0",
@@ -52,6 +69,7 @@ server = [
 # CLI dependencies — prompt-toolkit for Claude Code launcher and ShellTUI.
 # Only needed for users running the switchyard CLI.
 cli = [
+    "gumloop-nemo-switchyard[lib]",
     "prompt-toolkit>=3.0.52,<4.0",
 ]
 
@@ -74,7 +92,7 @@ affinity-redis = [
 
 # Everything — all optional dependencies for full-featured deployment.
 all = [
-    "nemo-switchyard[server,cli,tracing,affinity-redis]",
+    "gumloop-nemo-switchyard[lib,server,cli,tracing,affinity-redis]",
 ]
 
 # Dev tooling lives in a PEP 735 dependency group rather than an optional
@@ -103,7 +121,7 @@ dev = [
     # Harbor is needed for local evaluation runs and supports the package floor.
     # Package users still do not see it in published metadata.
     "harbor @ git+https://github.com/harbor-framework/harbor.git@v0.6.4 ; python_version >= '3.12'",
-    "nemo-switchyard[server]",
+    "gumloop-nemo-switchyard[server]",
     "pytest-markdown-docs>=0.9.2",
 ]
 docs = [

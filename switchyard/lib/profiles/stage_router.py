@@ -6,7 +6,12 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Self
+from typing import Any
+
+try:
+    from typing import Self
+except ImportError:  # Gumloop fork: py3.10 — Self landed in typing in 3.11.
+    from typing_extensions import Self
 
 from switchyard.lib.processors.reasoning_hint import model_accepts_reasoning_hint
 from switchyard.lib.processors.stage_router import StageRouterDecisionLog, TierClassifier

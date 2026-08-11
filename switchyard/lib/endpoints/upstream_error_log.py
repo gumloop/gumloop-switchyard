@@ -27,7 +27,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+# Gumloop fork: py3.10 has no datetime.UTC alias.
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 
 from switchyard.lib.endpoints.outcome_metrics import classify, code_label
 
