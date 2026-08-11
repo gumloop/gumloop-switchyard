@@ -21,7 +21,8 @@ futures-util.workspace = true
 http.workspace = true
 parking_lot.workspace = true
 switchyard-libsy.workspace = true
-pyo3 = { version = "0.28.3", features = ["abi3-py312", "extension-module"] }
+# Gumloop fork: target the py3.10 stable ABI so one wheel serves CPython 3.10+.
+pyo3 = { version = "0.28.3", features = ["abi3-py310", "extension-module"] }
 pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
 pythonize = "0.28.0"
 serde.workspace = true
