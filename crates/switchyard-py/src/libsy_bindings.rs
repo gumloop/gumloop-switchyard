@@ -10,9 +10,10 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use serde_json::{Value, json};
 use switchyard_libsy::{
-    Algorithm, ClassifierContractConfig, HandoffNoteConfig, LibsyError as RustLibsyError,
-    LlmClassifierConfig, LlmFallback, LlmTarget, LlmTargetSet, LlmTaskClassifier, Noop, PickerMode,
-    Random, StageRouter, StageRouterConfig, TaskClassifierConfig,
+    Algorithm, ClassifierContractConfig, CustomClassifierConfig, CustomClassifierPolicy,
+    HandoffNoteConfig, LibsyError as RustLibsyError, LlmClassifierConfig, LlmFallback, LlmTarget,
+    LlmTargetSet, LlmTaskClassifier, Noop, PickerMode, Random, StageRouter, StageRouterConfig,
+    TaskClassifierConfig,
 };
 use switchyard_protocol::{
     AggLlmResponse, Context, Decision, LlmClientError, LlmResponse, Metadata, Request, Response,
@@ -154,6 +155,74 @@ impl PyTaskClassifierConfig {
                 max_output_tokens,
             },
         }
+    }
+}
+
+/// Settings for a custom-schema classifier: a user-supplied prompt, an inner JSON
+/// Schema for the verdict, and a JSON Pointer selecting the target label from it.
+#[pyclass(
+    name = "CustomClassifierConfig",
+    module = "switchyard.libsy",
+    frozen,
+    skip_from_py_object
+)]
+struct PyCustomClassifierConfig {
+    prompt: String,
+    response_schema: Value,
+    selector: String,
+    session_affinity: bool,
+    message_hash_fallback: bool,
+    recent_turn_window: Option<usize>,
+    max_output_tokens: u64,
+}
+
+impl PyCustomClassifierConfig {
+    fn clone_core(&self) -> CustomClassifierConfig {
+        CustomClassifierConfig {
+            prompt: self.prompt.clone(),
+            response_schema: self.response_schema.clone(),
+            policy: CustomClassifierPolicy::target_selector(self.selector.clone()),
+            session_affinity: self.session_affinity,
+            message_hash_fallback: self.message_hash_fallback,
+            recent_turn_window: self.recent_turn_window,
+            max_output_tokens: self.max_output_tokens,
+        }
+    }
+}
+
+#[pymethods]
+impl PyCustomClassifierConfig {
+    #[new]
+    #[pyo3(signature = (
+        prompt,
+        response_schema,
+        selector,
+        *,
+        session_affinity=false,
+        message_hash_fallback=false,
+        recent_turn_window=None,
+        max_output_tokens=4096
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        prompt: String,
+        response_schema: &Bound<'_, PyAny>,
+        selector: String,
+        session_affinity: bool,
+        message_hash_fallback: bool,
+        recent_turn_window: Option<usize>,
+        max_output_tokens: u64,
+    ) -> PyResult<Self> {
+        let response_schema: Value = from_python(response_schema)?;
+        Ok(Self {
+            prompt,
+            response_schema,
+            selector,
+            session_affinity,
+            message_hash_fallback,
+            recent_turn_window,
+            max_output_tokens,
+        })
     }
 }
 
@@ -308,6 +377,40 @@ fn llm_task_classifier_algorithm(
     Ok(PyAlgorithm::new(Arc::new(algorithm)))
 }
 
+/// Construct schema-driven classifier routing across two or more named targets.
+///
+/// `targets` pairs each user-facing label with its routing target; the judge's
+/// schema-validated verdict selects a label through the config's JSON Pointer,
+/// and `default_target` is used when the judge does not produce a usable verdict.
+#[pyfunction(name = "custom_classifier")]
+#[pyo3(signature = (
+    judge_target,
+    targets,
+    *,
+    default_target,
+    config
+))]
+fn custom_classifier_algorithm(
+    py: Python<'_>,
+    judge_target: Py<PyLlmTarget>,
+    targets: Vec<(String, Py<PyLlmTarget>)>,
+    default_target: String,
+    config: Py<PyCustomClassifierConfig>,
+) -> PyResult<PyAlgorithm> {
+    let targets = targets
+        .iter()
+        .map(|(label, target)| Ok((label.clone(), target.bind(py).try_borrow()?.clone_core(py))))
+        .collect::<PyResult<Vec<_>>>()?;
+    let algorithm = LlmTaskClassifier::new(LlmClassifierConfig::Custom {
+        judge_target: judge_target.bind(py).try_borrow()?.clone_core(py),
+        targets,
+        default_target,
+        config: config.bind(py).try_borrow()?.clone_core(),
+    })
+    .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    Ok(PyAlgorithm::new(Arc::new(algorithm)))
+}
+
 /// Construct signal-driven stage routing with an optional LLM classifier fallback.
 #[pyfunction(name = "stage_router")]
 #[pyo3(signature = (
@@ -399,6 +502,7 @@ fn invalid_python_response(error: PyErr) -> LlmClientError {
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let libsy_module = PyModule::new(module.py(), "libsy")?;
     libsy_module.add_class::<PyAlgorithm>()?;
+    libsy_module.add_class::<PyCustomClassifierConfig>()?;
     libsy_module.add_class::<PyLlmFallback>()?;
     libsy_module.add_class::<PyLlmTarget>()?;
     libsy_module.add_class::<PyTaskClassifierConfig>()?;
@@ -408,6 +512,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         llm_task_classifier_algorithm,
         &libsy_module
     )?)?;
+    libsy_module.add_function(wrap_pyfunction!(custom_classifier_algorithm, &libsy_module)?)?;
     libsy_module.add_function(wrap_pyfunction!(stage_router_algorithm, &libsy_module)?)?;
     libsy_module.add("LibsyError", module.getattr("LibsyError")?)?;
     module.add_submodule(&libsy_module)?;
