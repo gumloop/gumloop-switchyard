@@ -7,12 +7,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from switchyard_rust.translation import (
-    TranslationEngine,
-    is_native_translation_available,
-)
-
 if TYPE_CHECKING:
+    from switchyard_rust.translation import TranslationEngine as TranslationEngine
+    from switchyard_rust.translation import (
+        is_native_translation_available as is_native_translation_available,
+    )
     from switchyard_rust.components import AnthropicNativeBackend as AnthropicNativeBackend
     from switchyard_rust.components import BackendFormat as BackendFormat
     from switchyard_rust.components import EndpointConfig as EndpointConfig
@@ -52,6 +51,12 @@ if TYPE_CHECKING:
 
 
 def __getattr__(name: str) -> object:
+    # Gumloop fork: translation pulls provider SDK types, so it resolves lazily and
+    # the bindings-only surface (switchyard_rust.libsy) stays importable without them.
+    if name in {"TranslationEngine", "is_native_translation_available"}:
+        from switchyard_rust import translation
+
+        return getattr(translation, name)
     if name in {
         "AnthropicNativeBackend",
         "BackendFormat",
