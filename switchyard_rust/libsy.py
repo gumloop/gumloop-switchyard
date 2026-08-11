@@ -13,10 +13,12 @@ from switchyard_rust.core import _load_native
 _EXPORTS = frozenset(
     {
         "Algorithm",
+        "CustomClassifierConfig",
         "LibsyError",
         "LlmFallback",
         "LlmTarget",
         "TaskClassifierConfig",
+        "custom_classifier",
         "llm_task_classifier",
         "noop",
         "random",
@@ -66,6 +68,20 @@ if TYPE_CHECKING:
         ) -> None: ...
 
     @final
+    class CustomClassifierConfig:
+        def __init__(
+            self,
+            prompt: str,
+            response_schema: Mapping[str, object],
+            selector: str,
+            *,
+            session_affinity: bool = False,
+            message_hash_fallback: bool = False,
+            recent_turn_window: int | None = None,
+            max_output_tokens: int = 4096,
+        ) -> None: ...
+
+    @final
     class LlmFallback:
         def __init__(
             self,
@@ -92,6 +108,14 @@ if TYPE_CHECKING:
         capable_target: LlmTarget,
         *,
         config: TaskClassifierConfig,
+    ) -> Algorithm: ...
+
+    def custom_classifier(
+        judge_target: LlmTarget,
+        targets: Sequence[tuple[str, LlmTarget]],
+        *,
+        default_target: str,
+        config: CustomClassifierConfig,
     ) -> Algorithm: ...
 
     def stage_router(
