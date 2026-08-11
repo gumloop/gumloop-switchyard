@@ -19,6 +19,7 @@ _EXPORTS = frozenset(
         "LlmTarget",
         "TaskClassifierConfig",
         "custom_classifier",
+        "escalation",
         "llm_task_classifier",
         "noop",
         "random",
@@ -116,6 +117,18 @@ if TYPE_CHECKING:
         *,
         default_target: str,
         config: CustomClassifierConfig,
+    ) -> Algorithm: ...
+
+    def escalation(
+        judge_target: LlmTarget,
+        efficient_target: LlmTarget,
+        capable_target: LlmTarget,
+        *,
+        prompt: str | None = None,
+        confirmations: int | None = None,
+        recent_turn_window: int | None = None,
+        window_message_chars: int | None = None,
+        max_output_tokens: int = 4096,
     ) -> Algorithm: ...
 
     def stage_router(

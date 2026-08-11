@@ -11,9 +11,9 @@ use pyo3::prelude::*;
 use serde_json::{Value, json};
 use switchyard_libsy::{
     Algorithm, ClassifierContractConfig, CustomClassifierConfig, CustomClassifierPolicy,
-    HandoffNoteConfig, LibsyError as RustLibsyError, LlmClassifierConfig, LlmFallback, LlmTarget,
-    LlmTargetSet, LlmTaskClassifier, Noop, PickerMode, Random, StageRouter, StageRouterConfig,
-    TaskClassifierConfig,
+    EscalationJudgeConfig, HandoffNoteConfig, LibsyError as RustLibsyError, LlmClassifierConfig,
+    LlmFallback, LlmTarget, LlmTargetSet, LlmTaskClassifier, Noop, PickerMode, Random, StageRouter,
+    StageRouterConfig, TaskClassifierConfig,
 };
 use switchyard_protocol::{
     AggLlmResponse, Context, Decision, LlmClientError, LlmResponse, Metadata, Request, Response,
@@ -411,6 +411,61 @@ fn custom_classifier_algorithm(
     Ok(PyAlgorithm::new(Arc::new(algorithm)))
 }
 
+/// Construct escalation routing: each efficient answer is judged, and a confirmed streak
+/// of escalate verdicts moves the session to the capable target and latches it there.
+///
+/// Sessions are identified by request metadata (e.g. a `session-id` header), which
+/// `confirmations >= 2` requires since the streak is retained per session.
+#[pyfunction(name = "escalation")]
+#[pyo3(signature = (
+    judge_target,
+    efficient_target,
+    capable_target,
+    *,
+    prompt=None,
+    confirmations=None,
+    recent_turn_window=None,
+    window_message_chars=None,
+    max_output_tokens=4096
+))]
+#[allow(clippy::too_many_arguments)]
+fn escalation_algorithm(
+    py: Python<'_>,
+    judge_target: Py<PyLlmTarget>,
+    efficient_target: Py<PyLlmTarget>,
+    capable_target: Py<PyLlmTarget>,
+    prompt: Option<String>,
+    confirmations: Option<u32>,
+    recent_turn_window: Option<usize>,
+    window_message_chars: Option<usize>,
+    max_output_tokens: u64,
+) -> PyResult<PyAlgorithm> {
+    let mut contract = ClassifierContractConfig::default();
+    if let Some(prompt) = prompt {
+        contract = contract.with_prompt(prompt);
+    }
+    let mut config = EscalationJudgeConfig::default();
+    if let Some(value) = confirmations {
+        config.confirmations = value;
+    }
+    if let Some(value) = recent_turn_window {
+        config.recent_turn_window = value;
+    }
+    if let Some(value) = window_message_chars {
+        config.window_message_chars = value;
+    }
+    let algorithm = LlmTaskClassifier::new(LlmClassifierConfig::Escalation {
+        judge_target: judge_target.bind(py).try_borrow()?.clone_core(py),
+        efficient_target: efficient_target.bind(py).try_borrow()?.clone_core(py),
+        capable_target: capable_target.bind(py).try_borrow()?.clone_core(py),
+        contract,
+        config,
+        max_output_tokens,
+    })
+    .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    Ok(PyAlgorithm::new(Arc::new(algorithm)))
+}
+
 /// Construct signal-driven stage routing with an optional LLM classifier fallback.
 #[pyfunction(name = "stage_router")]
 #[pyo3(signature = (
@@ -512,7 +567,11 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         llm_task_classifier_algorithm,
         &libsy_module
     )?)?;
-    libsy_module.add_function(wrap_pyfunction!(custom_classifier_algorithm, &libsy_module)?)?;
+    libsy_module.add_function(wrap_pyfunction!(
+        custom_classifier_algorithm,
+        &libsy_module
+    )?)?;
+    libsy_module.add_function(wrap_pyfunction!(escalation_algorithm, &libsy_module)?)?;
     libsy_module.add_function(wrap_pyfunction!(stage_router_algorithm, &libsy_module)?)?;
     libsy_module.add("LibsyError", module.getattr("LibsyError")?)?;
     module.add_submodule(&libsy_module)?;
