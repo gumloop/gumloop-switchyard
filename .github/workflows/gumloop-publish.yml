@@ -41,6 +41,7 @@ jobs:
           python3 -m pip install --quiet twine
           ACCESS_TOKEN="$(gcloud auth print-access-token)"
           python3 -m twine upload \
+            --skip-existing \
             --repository-url https://us-west1-python.pkg.dev/agenthub-dev/gumloop/ \
             --username oauth2accesstoken \
             --password "${ACCESS_TOKEN}" \
