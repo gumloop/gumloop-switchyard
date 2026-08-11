@@ -1,0 +1,90 @@
+# Gumloop fork: build the cp310-abi3 wheel and publish it to the Gumloop
+# Python Artifact Registry (the same registry gumloop-celery ships from).
+#
+# Trigger by pushing a tag like `gumloop-v0.2.0+gumloop.0.1.1` (tag must match
+# the version in pyproject.toml) or manually via workflow_dispatch.
+#
+# Auth is keyless (Workload Identity Federation): the repo variable
+# GCP_WIF_PROVIDER holds the provider name emitted by the backend Terraform
+# output `switchyard_wif_provider` (module `switchyard_wif`), which trusts
+# gumloop-v* tags and gumloop-main and impersonates the agenthub-github-ci-cd
+# service account (Artifact Registry writer via AgentHubGitHubCICD).
+
+name: gumloop-publish
+
+# Pull requests build the wheel and run the binding tests; publishing runs only
+# for gumloop-v* tags and manual dispatches (the WIF provider trusts only those refs).
+on:
+  push:
+    tags:
+      - "gumloop-v*"
+  pull_request: {}
+  workflow_dispatch: {}
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # manylinux_2_28 keeps the wheel installable on the backend's Debian-based
+      # images; building on the bare runner would tag the runner's glibc instead.
+      - name: Build cp310-abi3 wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --interpreter python3.10
+          manylinux: 2_28
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # Runs from a neutral directory so the source tree can't shadow the wheel.
+      - name: Test the bindings surface on the built wheel
+        run: |
+          python3.10 -m pip install --quiet target/wheels/*.whl pytest pytest-asyncio
+          cp tests/test_libsy_custom_classifier.py "$RUNNER_TEMP/"
+          cd "$RUNNER_TEMP"
+          python3.10 -m pytest test_libsy_custom_classifier.py -q -o asyncio_mode=auto
+
+      - name: Authenticate to Google Cloud
+        if: github.event_name != 'pull_request'
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: agenthub-github-ci-cd@agenthub-dev.iam.gserviceaccount.com
+          token_format: access_token
+
+      - name: Publish to Artifact Registry
+        if: github.event_name != 'pull_request'
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          python3 -m pip install --quiet twine
+          # Artifact Registry rejects twine's --skip-existing capability probe, so
+          # republished tags stay idempotent by checking the simple index instead.
+          EXISTING="$(curl -sf -u "oauth2accesstoken:${ACCESS_TOKEN}" \
+            https://us-west1-python.pkg.dev/agenthub-dev/gumloop/simple/gumloop-nemo-switchyard/ || true)"
+          for wheel in target/wheels/*.whl; do
+            if printf '%s' "$EXISTING" | grep -qF "$(basename "$wheel")"; then
+              echo "already published, skipping: $(basename "$wheel")"
+            else
+              python3 -m twine upload \
+                --repository-url https://us-west1-python.pkg.dev/agenthub-dev/gumloop/ \
+                --username oauth2accesstoken \
+                --password "${ACCESS_TOKEN}" \
+                "$wheel"
+            fi
+          done
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels
+          path: target/wheels/*.whl
