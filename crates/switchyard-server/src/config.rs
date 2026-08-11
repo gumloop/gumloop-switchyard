@@ -1455,6 +1455,52 @@ target = "azure"
     }
 
     #[test]
+    fn backend_owned_extra_headers_are_rejected_case_insensitively() {
+        let cases = [
+            (
+                "base_url = \"https://example.test/v1\"",
+                "base_url = \"https://example.test/v1\"\n\
+                 extra_headers = { Authorization = \"injected\" }",
+                "Authorization",
+            ),
+            (
+                "base_url = \"https://example.test\"",
+                "base_url = \"https://example.test\"\n\
+                 extra_headers = { \"X-Api-Key\" = \"injected\" }",
+                "X-Api-Key",
+            ),
+            (
+                "base_url = \"https://example.test\"",
+                "base_url = \"https://example.test\"\n\
+                 extra_headers = { \"ANTHROPIC-VERSION\" = \"injected\" }",
+                "ANTHROPIC-VERSION",
+            ),
+        ];
+
+        for (original, replacement, header) in cases {
+            let configured = VALID_CONFIG.replacen(original, replacement, 1);
+            let error = error_message(&configured);
+            assert!(
+                error.contains(&format!("reserved header {header:?}")),
+                "expected {header} to be rejected, got: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn custom_extra_headers_remain_valid() -> ServerResult<()> {
+        let configured = VALID_CONFIG.replacen(
+            "base_url = \"https://example.test/v1\"",
+            "base_url = \"https://example.test/v1\"\n\
+             extra_headers = { X-Inference-Priority = \"batch\" }",
+            1,
+        );
+
+        server_state_from_toml(&configured)?;
+        Ok(())
+    }
+
+    #[test]
     fn retry_budget_defaults_and_accepts_an_override() -> ServerResult<()> {
         let default: ServerConfig = toml::from_str(VALID_CONFIG).map_err(|error| {
             ServerError::new(format!("failed to parse default config: {error}"))

@@ -94,6 +94,14 @@ impl TranslatingLlmClient {
     /// Builds a client over the given [`ModelConfig`]s, with a fresh shared HTTP
     /// client and the built-in translation codecs.
     pub fn new(model_configs: &[ModelConfig]) -> Result<Self> {
+        for config in model_configs {
+            config
+                .default_backend
+                .validate_extra_headers(&config.model_name)?;
+            for backend in config.other_backends.iter().flatten() {
+                backend.validate_extra_headers(&config.model_name)?;
+            }
+        }
         let client =
             reqwest::Client::builder()
                 .build()

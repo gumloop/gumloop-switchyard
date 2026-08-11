@@ -3,13 +3,12 @@
 
 """Tests for the minimal Python server route bundle."""
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 
 import httpx
 import pytest
+from pytest_mock import MockerFixture
 
 import switchyard.cli.switchyard_cli as cli
 from switchyard.cli.launchers.launcher_runtime import route_bundle_strategy_summary
@@ -103,6 +102,34 @@ def test_passthrough_route_builds_one_native_backend(monkeypatch: pytest.MonkeyP
     assert isinstance(stats_backend, StatsLlmBackend)
 
 
+@pytest.mark.parametrize(
+    ("target_format", "header"),
+    [
+        ("openai", "Authorization"),
+        ("anthropic", "X-Api-Key"),
+        ("anthropic", "ANTHROPIC-VERSION"),
+    ],
+)
+def test_passthrough_route_rejects_backend_owned_extra_headers(
+    target_format: str, header: str
+) -> None:
+    with pytest.raises(RouteBundleConfigError) as error:
+        build_route_bundle_table({
+            "routes": {
+                "direct": {
+                    "type": "passthrough",
+                    "target": {
+                        "model": "upstream/model",
+                        "format": target_format,
+                        "extra_headers": {header: "injected"},
+                    },
+                }
+            },
+        })
+
+    assert f'reserved header "{header}"' in str(error.value)
+
+
 def test_passthrough_summary_labels_the_model(tmp_path: Path) -> None:
     path = tmp_path / "routes.yaml"
     path.write_text("routes:\n  direct:\n    type: passthrough\n    target: upstream/model\n")
@@ -158,16 +185,30 @@ def test_main_reports_missing_bundle_without_traceback(
 
 
 def test_serve_loads_noop_bundle(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    mocker: MockerFixture, tmp_path: Path
 ) -> None:
     path = tmp_path / "routes.yaml"
     path.write_text("routes:\n  test/noop:\n    type: noop\n")
     captured: dict[str, object] = {}
 
-    def fake_serve(args: object, switchyard: object, **kwargs: object) -> None:
-        captured.update(args=args, switchyard=switchyard, **kwargs)
+    def fake_serve(
+        args: object,
+        switchyard: object,
+        inbound_default: str = "openai",
+        disable_backend_streaming: bool = False,
+        extra_endpoints: list[object] | None = None,
+        strategy_summary: str | None = None,
+    ) -> None:
+        captured.update(
+            args=args,
+            switchyard=switchyard,
+            inbound_default=inbound_default,
+            disable_backend_streaming=disable_backend_streaming,
+            extra_endpoints=extra_endpoints,
+            strategy_summary=strategy_summary,
+        )
 
-    monkeypatch.setattr(cli, "build_and_serve", fake_serve)
+    mocker.patch.object(cli, "build_and_serve", fake_serve)
     parser = cli._build_parser()
     args = parser.parse_args(["serve", "--routes", str(path)])
     args.func(args)

@@ -271,19 +271,21 @@ impl PyLlmTarget {
             }
         };
 
-        Ok(Self {
-            inner: LlmTarget {
-                id: LlmTargetId::new(id).map_err(|error| {
-                    PyValueError::new_err(format!("invalid LLM target id: {error}"))
-                })?,
-                model: ModelId::new(model)
-                    .map_err(|error| PyValueError::new_err(format!("invalid model id: {error}")))?,
-                format: backend_format_from_python(format.or(backend_format))?,
-                endpoint,
-                extra_body,
-                extra_headers,
-            },
-        })
+        let inner = LlmTarget {
+            id: LlmTargetId::new(id).map_err(|error| {
+                PyValueError::new_err(format!("invalid LLM target id: {error}"))
+            })?,
+            model: ModelId::new(model)
+                .map_err(|error| PyValueError::new_err(format!("invalid model id: {error}")))?,
+            format: backend_format_from_python(format.or(backend_format))?,
+            endpoint,
+            extra_body,
+            extra_headers,
+        };
+        inner
+            .validate_extra_headers()
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        Ok(Self { inner })
     }
 
     #[getter]

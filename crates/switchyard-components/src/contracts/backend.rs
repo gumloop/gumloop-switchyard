@@ -8,7 +8,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::error::{Result, SwitchyardError};
 use super::ids::{LlmTargetId, ModelId};
+
+const RESERVED_EXTRA_HEADERS: &[&str] = &["authorization", "x-api-key", "anthropic-version"];
 
 /// Wire format expected by an LLM target.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -98,15 +101,11 @@ pub struct LlmTarget {
     /// gateway enforces a ~6-min timeout that under ``-n 8``
     /// concurrency manifests as cascading 504s.
     ///
-    /// Headers added here are appended to whatever the backend would
-    /// already send (``Authorization``, ``anthropic-version``,
-    /// telemetry).  Reserved header names supplied by the backend
-    /// (``Authorization`` / ``x-api-key`` / ``anthropic-version``)
-    /// are still authoritative; ``extra_headers`` cannot override
-    /// them — the underlying ``reqwest`` builder appends each entry
-    /// rather than replacing existing ones, so a duplicate name
-    /// would create a multi-valued header rather than a
-    /// silent-override security hazard.
+    /// Custom headers are appended to the backend's standard headers.
+    /// Backend-owned ``Authorization``, ``x-api-key``, and
+    /// ``anthropic-version`` names are rejected case-insensitively so
+    /// each outbound request carries exactly one authentication and
+    /// protocol header.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extra_headers: BTreeMap<String, String>,
 }
@@ -122,6 +121,21 @@ impl LlmTarget {
             extra_body: None,
             extra_headers: BTreeMap::new(),
         }
+    }
+
+    /// Rejects headers that would duplicate backend-owned authentication or protocol headers.
+    pub fn validate_extra_headers(&self) -> Result<()> {
+        if let Some(name) = self.extra_headers.keys().find(|name| {
+            RESERVED_EXTRA_HEADERS
+                .iter()
+                .any(|reserved| name.eq_ignore_ascii_case(reserved))
+        }) {
+            return Err(SwitchyardError::InvalidConfig(format!(
+                "target {} extra_headers cannot set reserved header {name:?}; the backend sets authentication and protocol headers",
+                self.id
+            )));
+        }
+        Ok(())
     }
 }
 

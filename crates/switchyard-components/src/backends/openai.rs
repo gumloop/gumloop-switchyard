@@ -68,6 +68,7 @@ impl OpenAiNativeBackend {
 
     fn with_transport(target: LlmTarget, transport: Arc<dyn OpenAiTransport>) -> Result<Self> {
         validate_target_format(&target)?;
+        target.validate_extra_headers()?;
         Ok(Self {
             target,
             transport,

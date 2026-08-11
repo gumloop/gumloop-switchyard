@@ -71,6 +71,7 @@ impl AnthropicNativeBackend {
 
     fn with_transport(target: LlmTarget, transport: Arc<dyn AnthropicTransport>) -> Result<Self> {
         validate_target_format(&target)?;
+        target.validate_extra_headers()?;
         Ok(Self {
             target,
             transport,

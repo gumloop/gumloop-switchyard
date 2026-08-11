@@ -404,6 +404,36 @@ async fn openai_native_applies_target_extra_body_and_headers() -> Result<()> {
     Ok(())
 }
 
+// Backend-owned authentication headers must fail during construction, before a request is sent.
+#[test]
+fn native_backends_reject_reserved_target_headers() -> Result<()> {
+    let mut openai = openai_target("http://127.0.0.1:1/v1".to_string())?;
+    openai
+        .extra_headers
+        .insert("AUTHORIZATION".to_string(), "Bearer injected".to_string());
+    let openai_error = OpenAiNativeBackend::new(openai).err().ok_or_else(|| {
+        SwitchyardError::Other("OpenAI target unexpectedly succeeded".to_string())
+    })?;
+    assert!(matches!(&openai_error, SwitchyardError::InvalidConfig(_)));
+    assert!(openai_error.to_string().contains("AUTHORIZATION"));
+
+    let mut anthropic = anthropic_target("http://127.0.0.1:1".to_string())?;
+    anthropic
+        .extra_headers
+        .insert("X-Api-Key".to_string(), "injected".to_string());
+    let anthropic_error = AnthropicNativeBackend::new(anthropic)
+        .err()
+        .ok_or_else(|| {
+            SwitchyardError::Other("Anthropic target unexpectedly succeeded".to_string())
+        })?;
+    assert!(matches!(
+        &anthropic_error,
+        SwitchyardError::InvalidConfig(_)
+    ));
+    assert!(anthropic_error.to_string().contains("X-Api-Key"));
+    Ok(())
+}
+
 // Passthrough OpenAI calls should not rewrite caller model names.
 #[tokio::test]
 async fn openai_passthrough_preserves_client_model_and_records_context() -> Result<()> {

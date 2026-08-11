@@ -9,9 +9,10 @@ use reqwest::RequestBuilder;
 use serde_json::Value;
 use switchyard_protocol::WireFormat;
 
-use crate::error::is_overflow_body;
+use crate::error::{LlmClientError, Result, is_overflow_body};
 
 const ANTHROPIC_VERSION: &str = "2023-06-01";
+const RESERVED_EXTRA_HEADERS: &[&str] = &["authorization", "x-api-key", "anthropic-version"];
 
 /// Default number of retries for server-configured upstream calls.
 pub const DEFAULT_MAX_RETRIES: u32 = 2;
@@ -77,6 +78,22 @@ pub enum Backend {
 }
 
 impl Backend {
+    // Checks static headers before building any request.
+    pub(crate) fn validate_extra_headers(&self, model_name: &str) -> Result<()> {
+        if let Some(name) = self.config().extra_headers.keys().find(|name| {
+            RESERVED_EXTRA_HEADERS
+                .iter()
+                .any(|reserved| name.eq_ignore_ascii_case(reserved))
+        }) {
+            return Err(LlmClientError::Configuration {
+                message: format!(
+                    "model {model_name:?} extra_headers cannot set reserved header {name:?}; the backend sets authentication and protocol headers"
+                ),
+            });
+        }
+        Ok(())
+    }
+
     /// The wire format the request IR is encoded to for this backend.
     pub fn wire_format(&self) -> WireFormat {
         match self {
