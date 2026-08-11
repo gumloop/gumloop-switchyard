@@ -1,0 +1,67 @@
+# Gumloop fork: build the cp310-abi3 wheel and publish it to the Gumloop
+# Python Artifact Registry (the same registry gumloop-celery ships from).
+#
+# Trigger by pushing a tag like `gumloop-v0.2.0+gumloop.0.1.0` (tag must match
+# the version in pyproject.toml) or manually via workflow_dispatch.
+#
+# Requires the repository secret GCP_ARTIFACT_REGISTRY_CREDENTIALS: a Google
+# credentials JSON usable as Application Default Credentials (a service account
+# key or an authorized-user file) with artifactregistry.writer on
+# projects/agenthub-dev/locations/us-west1/repositories/gumloop.
+
+name: gumloop-publish
+
+on:
+  push:
+    tags:
+      - "gumloop-v*"
+  workflow_dispatch: {}
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # manylinux_2_28 keeps the wheel installable on the backend's Debian-based
+      # images; building on the bare runner would tag the runner's glibc instead.
+      - name: Build cp310-abi3 wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --interpreter python3.10
+          manylinux: 2_28
+
+      # gcloud mints the token from ADC, so the secret may be a service account
+      # key or an authorized-user credentials file — same code path for both.
+      - name: Publish to Artifact Registry
+        env:
+          GCP_CREDENTIALS_JSON: ${{ secrets.GCP_ARTIFACT_REGISTRY_CREDENTIALS }}
+        run: |
+          CRED_FILE="$RUNNER_TEMP/gcp-credentials.json"
+          printf '%s' "$GCP_CREDENTIALS_JSON" > "$CRED_FILE"
+          export GOOGLE_APPLICATION_CREDENTIALS="$CRED_FILE"
+          python3 -m pip install --quiet twine
+          ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
+          # Artifact Registry rejects twine's --skip-existing capability probe, so
+          # republished tags stay idempotent by checking the simple index instead.
+          EXISTING="$(curl -sf -u "oauth2accesstoken:${ACCESS_TOKEN}" \
+            https://us-west1-python.pkg.dev/agenthub-dev/gumloop/simple/gumloop-nemo-switchyard/ || true)"
+          for wheel in target/wheels/*.whl; do
+            if printf '%s' "$EXISTING" | grep -qF "$(basename "$wheel")"; then
+              echo "already published, skipping: $(basename "$wheel")"
+            else
+              python3 -m twine upload \
+                --repository-url https://us-west1-python.pkg.dev/agenthub-dev/gumloop/ \
+                --username oauth2accesstoken \
+                --password "${ACCESS_TOKEN}" \
+                "$wheel"
+            fi
+          done
+          rm -f "$CRED_FILE"
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels
+          path: target/wheels/*.whl
