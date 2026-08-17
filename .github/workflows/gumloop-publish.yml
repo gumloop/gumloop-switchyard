@@ -1,4 +1,4 @@
-# Gumloop fork: build the cp310-abi3 wheel and publish it to the Gumloop
+# Gumloop fork: build cp310-abi3 wheels and publish them to the Gumloop
 # Python Artifact Registry (the same registry gumloop-celery ships from).
 #
 # Trigger by pushing a tag like `gumloop-v0.2.0+gumloop.0.1.1` (tag must match
@@ -22,38 +22,83 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  build-and-publish:
-    runs-on: ubuntu-latest
+  build-wheels:
+    name: Build wheel (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            os: ubuntu-latest
+          - label: macos-x86_64
+            os: macos-15-intel
+            rust_target: x86_64-apple-darwin
+          - label: macos-arm64
+            os: macos-14
+            rust_target: aarch64-apple-darwin
     permissions:
-      id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v4
-
-      # manylinux_2_28 keeps the wheel installable on the backend's Debian-based
-      # images; building on the bare runner would tag the runner's glibc instead.
-      - name: Build cp310-abi3 wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          args: --release --interpreter python3.10
-          manylinux: 2_28
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
+      # manylinux_2_28 keeps the wheel installable on the backend's Debian-based
+      # images; building on the bare runner would tag the runner's glibc instead.
+      - name: Build manylinux cp310-abi3 wheel
+        if: runner.os == 'Linux'
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --interpreter python3.10
+          manylinux: 2_28
+
+      - name: Build macOS cp310-abi3 wheel
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          python -m pip install --quiet "maturin>=1.9,<2.0"
+          rustup target add "${{ matrix.rust_target }}"
+          python -m maturin build \
+            --release \
+            --interpreter python \
+            --target "${{ matrix.rust_target }}"
+
       # Runs from a neutral directory so the source tree can't shadow the wheel.
       - name: Test the bindings surface on the built wheel
+        shell: bash
         run: |
-          python3.10 -m pip install --quiet target/wheels/*.whl pytest pytest-asyncio
+          python -m pip install --quiet target/wheels/*.whl pytest pytest-asyncio
           cp tests/test_libsy_custom_classifier.py "$RUNNER_TEMP/"
           cd "$RUNNER_TEMP"
-          python3.10 -m pytest test_libsy_custom_classifier.py -q -o asyncio_mode=auto
+          python -m pytest test_libsy_custom_classifier.py -q -o asyncio_mode=auto
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.label }}
+          path: target/wheels/*.whl
+
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: target/wheels
+          merge-multiple: true
 
       - name: Authenticate to Google Cloud
-        if: github.event_name != 'pull_request'
         id: auth
         uses: google-github-actions/auth@v2
         with:
@@ -62,7 +107,6 @@ jobs:
           token_format: access_token
 
       - name: Publish to Artifact Registry
-        if: github.event_name != 'pull_request'
         env:
           ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
@@ -82,9 +126,3 @@ jobs:
                 "$wheel"
             fi
           done
-
-      - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels
-          path: target/wheels/*.whl
