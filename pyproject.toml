@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 # Gumloop fork: dist renamed (mirrors gumloop-celery); import names are unchanged.
 name = "gumloop-nemo-switchyard"
-version = "0.2.0+gumloop.0.2.0"
+version = "0.2.0+gumloop.0.2.1"
 description = "Typed, composable LLM routing with request/response translation and multi-backend orchestration"
 readme = "README.md"
 license = "Apache-2.0"
