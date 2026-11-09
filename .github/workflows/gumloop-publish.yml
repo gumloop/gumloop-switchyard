@@ -38,7 +38,7 @@ jobs:
             os: macos-15-intel
             rust_target: x86_64-apple-darwin
           - label: macos-arm64
-            os: macos-14
+            os: macos-15
             rust_target: aarch64-apple-darwin
     permissions:
       contents: read
