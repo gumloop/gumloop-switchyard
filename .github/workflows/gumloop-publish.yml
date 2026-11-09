@@ -31,6 +31,9 @@ jobs:
         include:
           - label: linux-x86_64
             os: ubuntu-latest
+          - label: linux-aarch64
+            os: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
           - label: macos-x86_64
             os: macos-15-intel
             rust_target: x86_64-apple-darwin
@@ -56,6 +59,7 @@ jobs:
           command: build
           args: --release --interpreter python3.10
           manylinux: 2_28
+          target: ${{ matrix.rust_target }}
 
       - name: Build macOS cp310-abi3 wheel
         if: runner.os == 'macOS'
