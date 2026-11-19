@@ -13,7 +13,8 @@
 name: gumloop-publish
 
 # Pull requests build the wheel and run the binding tests; publishing runs only
-# for gumloop-v* tags and manual dispatches (the WIF provider trusts only those refs).
+# for gumloop-v* tags and manual dispatches on gumloop-main, in the reviewer-gated
+# release environment (the only place the WIF provider issues a token).
 on:
   push:
     tags:
@@ -91,6 +92,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build-wheels
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       id-token: write
       contents: read
@@ -107,7 +109,7 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: agenthub-github-ci-cd@agenthub-dev.iam.gserviceaccount.com
+          service_account: switchyard-publish@agenthub-dev.iam.gserviceaccount.com
           token_format: access_token
 
       - name: Publish to Artifact Registry
